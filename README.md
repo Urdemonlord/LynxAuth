@@ -1,113 +1,94 @@
 # LynxAuth
 
-Middleware API untuk otentikasi wajah anti-deepfake sesuai PRD di `docs/PRD.md`.
+**Sharp Identity. Real Face.**
 
-## Struktur
+Middleware API untuk otentikasi wajah anti-deepfake — Rust gateway + Python inference + PostgreSQL/pgvector.
 
-- `lynxauth-core/` — API gateway Rust + Axum
-- `inference-worker/` — worker FastAPI untuk deepfake + face recognition
-- `lynxauth-sdk/` — SDK Python untuk capture kamera dan kirim request
-- `docker/postgres/init/` — init SQL PostgreSQL + pgvector
-- `tests/` — smoke test scaffold
+## Arsitektur
 
-## Status scaffold
+```
+Browser / Client ──► Demo UI (nginx :3000) ──► lynxauth-core (Rust/Axum :8080)
+                                                    │
+                                                    ▼
+                                          inference-worker (FastAPI :8000)
+                                                    │
+                                                    ▼
+                                          PostgreSQL + pgvector (:5432)
+```
 
-Scaffold ini fokus ke fondasi repo dan kontrak antar komponen:
+## Stack
 
-- endpoint publik gateway sudah ada
-- proxy gateway → worker sudah ada
-- schema database awal sudah ada
-- worker sudah pakai PostgreSQL + pgvector untuk persistence embedding
-- face recognition phase 2 sudah mencoba backend nyata via InsightFace (CPU by default)
-- deepfake detector phase 2 sudah mendukung backend ONNX nyata via `DEEPFAKE_MODEL_PATH`
-- bundle default sekarang mengarah ke model `deepfake_vit_int8.onnx` + `preprocessor_config.json`
-- jika model deepfake belum tersedia, worker fallback ke heuristic mode dan melaporkan backend fallback
-- rate limiting dan admin auth masih skeleton yang aman untuk dilanjutkan
+| Komponen | Teknologi | Port |
+|----------|-----------|------|
+| **Demo UI** | nginx + HTML/CSS/JS | `:3000` |
+| **API Gateway** | Rust + Axum + SQLx | `:8080` |
+| **Inference Worker** | Python + FastAPI + ONNX Runtime + InsightFace | `:8000` |
+| **Database** | PostgreSQL 16 + pgvector | `:5432` (host `:55432`) |
 
-## Endpoint target
+## Quick Start
 
-Gateway (`lynxauth-core`):
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Stack siap dalam beberapa menit:
+- **Demo GUI**: http://localhost:3000
+- **Gateway API**: http://localhost:8080
+- **Worker**: http://localhost:8000
+
+## Demo GUI
+
+`demo-ui/index.html` — interface web untuk demo face authentication:
+
+- **Register** — upload/capture foto → enroll face embedding
+- **Verify** — upload/capture foto → deteksi deepfake + face match
+- **Audit Logs** — lihat history transaksi (X-API-Key: `change-me`)
+
+Akses via browser di port `:3000` setelah `docker compose up`.
+
+## Endpoints
+
+**Gateway (`lynxauth-core`):**
 - `GET /healthz`
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/verify`
-- `GET /api/v1/admin/logs`
+- `POST /api/v1/auth/register` (multipart: `user_id` + `image`)
+- `POST /api/v1/auth/verify` (multipart: `image`)
+- `GET /api/v1/admin/logs` (header: `X-API-Key`)
 
-Worker (`inference-worker`):
+**Worker (`inference-worker`):**
 - `GET /healthz`
 - `POST /infer/register`
 - `POST /infer/verify`
 
-## Quick start
+## Status Fitur
 
-1. Copy env:
+| Fitur | Status | Backend |
+|-------|--------|---------|
+| Face Recognition | ✅ Real | InsightFace (ArcFace + SCRFD, CPU) |
+| Deepfake Detection | ✅ Real | ONNX (deepfake_vit_int8) |
+| Face Embedding Store | ✅ Real | PostgreSQL + pgvector |
+| Audit Log | ✅ Real | PostgreSQL via SQLx (Rust) |
+| Admin API Key Auth | ✅ Real | Middleware Axum |
+| Rate Limiting | ⏳ Stub | TODO: sliding window |
+| Camera Hardware Lock | ⏳ Basic | Name-based filter |
+| Demo GUI | ✅ Baru | nginx + HTML/CSS/JS |
 
-```bash
-cp .env.example .env
-```
-
-2. Jalankan stack:
-
-```bash
-docker compose up --build
-```
-
-3. Health check:
-
-```bash
-curl http://localhost:8080/healthz
-curl http://localhost:8000/healthz
-```
-
-4. PostgreSQL host access untuk dev lokal:
+## Pengembangan Lokal
 
 ```bash
-# host port dipetakan ke 55432 supaya tidak bentrok dengan Postgres lain di VPS
-psql postgresql://lynxauth:lynxauth@127.0.0.1:55432/lynxauth
-```
+# Rust gateway
+cd lynxauth-core && cargo run
 
-## Development
-
-### Rust gateway
-
-```bash
-cd lynxauth-core
-cargo run
-```
-
-### Python worker
-
-```bash
+# Python worker (butuh Postgres running)
 cd inference-worker
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
-```
 
-### Python SDK
-
-```bash
-cd lynxauth-sdk
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python meow_sdk.py --help
-```
-
-## Verifikasi scaffold
-
-```bash
-cd /home/meowlabs/lynxauth
-python3 -m compileall inference-worker lynxauth-sdk tests
-cargo check --manifest-path lynxauth-core/Cargo.toml
+# Tests
 pytest tests -q
 ```
 
-## Next implementation priority
+## Environment
 
-1. Hubungkan `embedding_store.py` ke PostgreSQL + pgvector beneran
-2. Implement EfficientNet deepfake detector
-3. Implement InsightFace ArcFace + SCRFD
-4. Tambahkan rate limiting beneran di gateway
-5. Tambahkan admin API key middleware beneran
-6. Tambahkan benchmark dan integration tests
+Lihat `.env.example` untuk semua konfigurasi yang tersedia.

@@ -51,3 +51,14 @@ services:
         condition: service_healthy
       inference-worker:
         condition: service_started
+
+  demo-ui:
+    image: nginx:alpine
+    container_name: lynxauth-demo
+    ports:
+      - "3000:80"
+    volumes:
+      - ./demo-ui:/usr/share/nginx/html:ro
+      - ./demo-ui/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - lynxauth-core

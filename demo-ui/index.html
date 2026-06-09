@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LynxAuth — Face Authentication Demo</title>
+<style>
+  :root {
+    --bg: #0a0e17;
+    --surface: #111827;
+    --card: #1a2236;
+    --border: #2a3456;
+    --accent: #3b82f6;
+    --accent-glow: rgba(59,130,246,0.25);
+    --success: #22c55e;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --text: #e2e8f0;
+    --text-dim: #8892b0;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* Header */
+  header {
+    width: 100%;
+    padding: 20px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+  header .logo {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--accent), #8b5cf6);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 18px; color: white;
+  }
+  header h1 {
+    font-size: 22px; font-weight: 700;
+    background: linear-gradient(135deg, var(--text), var(--accent));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  header .tagline {
+    font-size: 12px; color: var(--text-dim);
+    margin-left: 8px; -webkit-text-fill-color: var(--text-dim);
+  }
+
+  /* Main */
+  main {
+    width: 100%; max-width: 960px;
+    padding: 24px; flex: 1;
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex; gap: 4px;
+    background: var(--surface);
+    padding: 4px; border-radius: var(--radius);
+    margin-bottom: 24px;
+    border: 1px solid var(--border);
+  }
+  .tab-btn {
+    flex: 1; padding: 10px 16px; border: none; border-radius: 8px;
+    background: transparent; color: var(--text-dim);
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+  .tab-btn.active { background: var(--accent); color: white; }
+
+  /* Cards */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 16px; font-weight: 600; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card h2 .icon { font-size: 18px; }
+
+  /* Inputs */
+  label {
+    display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px;
+  }
+  input[type="text"] {
+    width: 100%; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); font-size: 14px; outline: none;
+    transition: border 0.2s;
+  }
+  input[type="text"]:focus { border-color: var(--accent); }
+
+  /* Buttons */
+  .btn {
+    padding: 10px 20px; border: none; border-radius: 8px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-primary {
+    background: var(--accent); color: white;
+  }
+  .btn-primary:hover { background: #2563eb; box-shadow: 0 0 20px var(--accent-glow); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+  .btn-success {
+    background: var(--success); color: white;
+  }
+  .btn-danger {
+    background: var(--danger); color: white;
+  }
+  .btn-outline {
+    background: transparent; color: var(--text); border: 1px solid var(--border);
+  }
+  .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Image Zone */
+  .image-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+  .image-zone:hover { border-color: var(--accent); background: rgba(59,130,246,0.05); }
+  .image-zone.has-image { border-style: solid; border-color: var(--accent); }
+  .image-zone .placeholder-icon { font-size: 40px; opacity: 0.3; }
+  .image-zone .placeholder-text { font-size: 13px; color: var(--text-dim); }
+  .image-zone img {
+    max-width: 100%; max-height: 250px;
+    border-radius: 8px; object-fit: contain;
+  }
+  .image-zone input[type="file"] { display: none; }
+
+  .image-controls {
+    display: flex; gap: 8px; margin-top: 12px;
+    justify-content: center;
+  }
+
+  /* Camera */
+  #camera-preview {
+    width: 100%; max-height: 240px;
+    border-radius: 8px; background: #000;
+    display: none; object-fit: contain;
+  }
+
+  /* Result */
+  .result-card {
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-top: 16px;
+    display: none;
+    border: 1px solid;
+  }
+  .result-card.show { display: block; }
+  .result-card.success { background: rgba(34,197,94,0.08); border-color: var(--success); }
+  .result-card.fail { background: rgba(239,68,68,0.08); border-color: var(--danger); }
+  .result-card.warning { background: rgba(245,158,11,0.08); border-color: var(--warning); }
+
+  .result-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 999px;
+    font-size: 12px; font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .result-badge.success { background: rgba(34,197,94,0.15); color: var(--success); }
+  .result-badge.fail { background: rgba(239,68,68,0.15); color: var(--danger); }
+  .result-badge.warning { background: rgba(245,158,11,0.15); color: var(--warning); }
+
+  .result-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .result-item {
+    padding: 8px 12px; background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+  }
+  .result-item .label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+  .result-item .value { font-size: 16px; font-weight: 600; margin-top: 2px; }
+  .result-item .value.confidence { color: var(--accent); }
+  .result-item .value.authenticated.yes { color: var(--success); }
+  .result-item .value.authenticated.no { color: var(--danger); }
+  .result-item .value.deepfake.yes { color: var(--danger); }
+  .result-item .value.deepfake.no { color: var(--success); }
+
+  /* Loading */
+  .loading { display: none; align-items: center; gap: 10px; padding: 12px 0; }
+  .loading.show { display: flex; }
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Log Table */
+  .log-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .log-table th {
+    text-align: left; padding: 10px 8px;
+    color: var(--text-dim); font-weight: 500;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .log-table td {
+    padding: 10px 8px; border-bottom: 1px solid rgba(42,52,86,0.4);
+    font-variant-numeric: tabular-nums;
+  }
+  .log-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .log-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+  }
+  .log-badge.yes-auth { background: rgba(34,197,94,0.15); color: var(--success); }
+  .log-badge.no-auth { background: rgba(239,68,68,0.15); color: var(--danger); }
+  .log-badge.yes-df { background: rgba(239,68,68,0.15); color: var(--danger); }
+  .log-badge.no-df { background: rgba(34,197,94,0.15); color: var(--success); }
+  .log-empty {
+    text-align: center; padding: 40px 20px; color: var(--text-dim);
+  }
+
+  /* API Config */
+  .config-bar {
+    display: flex; gap: 12px; align-items: center;
+    padding: 12px 16px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 20px; flex-wrap: wrap;
+  }
+  .config-bar label { margin-bottom: 0; font-size: 12px; white-space: nowrap; }
+  .config-bar input[type="text"] {
+    width: 280px; padding: 6px 10px; font-size: 13px;
+  }
+  .config-bar .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    display: inline-block;
+  }
+  .config-bar .status-dot.online { background: var(--success); box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+  .config-bar .status-dot.offline { background: var(--danger); }
+
+  /* Tab content */
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Split layout */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .split { grid-template-columns: 1fr; } .result-grid { grid-template-columns: 1fr; } }
+
+  /* Footer */
+  footer {
+    padding: 16px; text-align: center;
+    font-size: 12px; color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    width: 100%;
+  }
+
+  /* Admin key input */
+  .admin-key-row {
+    display: flex; gap: 8px; align-items: center;
+    margin-bottom: 12px;
+  }
+  .admin-key-row input { flex: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">L</div>
+  <h1>LynxAuth <span class="tagline">Sharp Identity. Real Face.</span></h1>
+</header>
+
+<main>
+  <!-- Config -->
+  <div class="config-bar">
+    <label>🔗 API</label>
+    <input type="text" id="api-url" value="/api/v1" placeholder="API Base URL">
+    <span id="api-status"><span class="status-dot offline"></span> <span id="status-text">checking...</span></span>
+    <button class="btn btn-outline" onclick="checkHealth()" style="padding:6px 12px;font-size:12px;">↻</button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="register">📝 Register</button>
+    <button class="tab-btn" data-tab="verify">🔍 Verify</button>
+    <button class="tab-btn" data-tab="logs">📋 Audit Logs</button>
+  </div>
+
+  <!-- Register Tab -->
+  <div class="tab-content active" id="tab-register">
+    <div class="split">
+      <div class="card">
+        <h2><span class="icon">📸</span> Face Input</h2>
+        <div class="image-zone" id="register-zone" onclick="document.getElementById('register-file').click()">
+          <div class="placeholder-icon">🖼️</div>
+          <div class="placeholder-text">Click to upload face image</div>
+          <img id="register-preview" style="display:none;">
+          <input type="file" id="register-file" accept="image/*" onchange="previewImage(this, 'register-preview', 'register-zone')">
+        </div>
+        <div class="image-controls">
+          <button class="btn btn-outline" onclick="openCamera('register')">📷 Camera</button>
+          <button class="btn btn-outline" onclick="clearImage('register')">✕ Clear</button>
+        </div>
+        <video id="register-camera" autoplay playsinline></video>
+        <div class="image-controls" id="register-camera-controls" style="display:none;">
+          <button class="btn btn-primary" onclick="captureCamera('register')">📸 Capture</button>
+          <button class="btn btn-outline" onclick="stopCamera('register')">✕ Stop</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="icon">📋</span> Enrollment</h2>
+        <label for="register-user-id">User ID</label>
+        <input type="text" id="register-user-id" placeholder="e.g. usr_001" style="margin-bottom:12px;">
+        <button class="btn btn-primary" id="register-btn" onclick="registerFace()" disabled>
+          ⟳ Register Face
+        </button>
+        <div class="loading" id="register-loading">
+          <div class="spinner"></div> <span>Processing enrollment...</span>
+        </div>
+        <div class="result-card" id="register-result">
+          <div class="result-badge" id="register-badge"></div>
+          <div id="register-result-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Verify Tab -->
+  <div class="tab-content" id="tab-verify">
+    <div class="split">
+      <div class="card">
+        <h2><span class="icon">📸</span> Face Input</h2>
+        <div class="image-zone" id="verify-zone" onclick="document.getElementById('verify-file').click()">
+          <div class="placeholder-icon">🖼️</div>
+          <div class="placeholder-text">Click to upload face image</div>
+          <img id="verify-preview" style="display:none;">
+          <input type="file" id="verify-file" accept="image/*" onchange="previewImage(this, 'verify-preview', 'verify-zone')">
+        </div>
+        <div class="image-controls">
+          <button class="btn btn-outline" onclick="openCamera('verify')">📷 Camera</button>
+          <button class="btn btn-outline" onclick="clearImage('verify')">✕ Clear</button>
+        </div>
+        <video id="verify-camera" autoplay playsinline></video>
+        <div class="image-controls" id="verify-camera-controls" style="display:none;">
+          <button class="btn btn-primary" onclick="captureCamera('verify')">📸 Capture</button>
+          <button class="btn btn-outline" onclick="stopCamera('verify')">✕ Stop</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="icon">🔍</span> Verification</h2>
+        <button class="btn btn-primary" id="verify-btn" onclick="verifyFace()" disabled>
+          ⟳ Verify Face
+        </button>
+        <div class="loading" id="verify-loading">
+          <div class="spinner"></div> <span>Running verification...</span>
+        </div>
+        <div class="result-card" id="verify-result">
+          <div class="result-badge" id="verify-badge"></div>
+          <div id="verify-result-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logs Tab -->
+  <div class="tab-content" id="tab-logs">
+    <div class="card">
+      <h2><span class="icon">📋</span> Audit Logs</h2>
+      <div class="admin-key-row">
+        <input type="text" id="admin-key" placeholder="Admin API Key" value="">
+        <button class="btn btn-primary" onclick="fetchLogs()">⟳ Fetch</button>
+        <button class="btn btn-outline" onclick="fetchLogs()">↻ Refresh</button>
+      </div>
+      <div id="logs-container">
+        <div class="log-empty">Fetch logs to see authentication history.</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  LynxAuth Demo · Face Authentication Anti-Deepfake · Meow Labs
+</footer>
+
+<script>
+// ===== State =====
+const state = {
+  register: { stream: null },
+  verify: { stream: null },
+};
+
+// ===== Tabs =====
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ===== API =====
+function apiBase() {
+  return document.getElementById('api-url').value.replace(/\/+$/, '');
+}
+
+async function checkHealth() {
+  const dot = document.querySelector('#api-status .status-dot');
+  const text = document.getElementById('status-text');
+  dot.className = 'status-dot offline';
+  text.textContent = 'checking...';
+  try {
+    const res = await fetch(apiBase() + '/../healthz');
+    if (res.ok) {
+      dot.className = 'status-dot online';
+      text.textContent = 'online';
+    } else {
+      text.textContent = 'error ' + res.status;
+    }
+  } catch {
+    text.textContent = 'offline';
+  }
+}
+
+async function apiPost(endpoint, formData, headers = {}) {
+  const res = await fetch(apiBase() + endpoint, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  const data = await res.json();
+  return { ok: res.ok, status: res.status, data };
+}
+
+// ===== Image Handling =====
+function previewImage(input, previewId, zoneId) {
+  const file = input.files[0];
+  if (!file) return;
+  const img = document.getElementById(previewId);
+  const zone = document.getElementById(zoneId);
+  const reader = new FileReader();
+  reader.onload = e => {
+    img.src = e.target.result;
+    img.style.display = 'block';
+    zone.classList.add('has-image');
+    zone.querySelector('.placeholder-icon').style.display = 'none';
+    zone.querySelector('.placeholder-text').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+  updateButtonState();
+}
+
+function clearImage(context) {
+  const prefix = context;
+  const zone = document.getElementById(prefix + '-zone');
+  const img = document.getElementById(prefix + '-preview');
+  const fileInput = document.getElementById(prefix + '-file');
+  img.style.display = 'none';
+  img.src = '';
+  fileInput.value = '';
+  zone.classList.remove('has-image');
+  zone.querySelector('.placeholder-icon').style.display = '';
+  zone.querySelector('.placeholder-text').style.display = '';
+  updateButtonState();
+}
+
+function dataURLToBlob(dataUrl) {
+  const parts = dataUrl.split(',');
+  const mime = parts[0].match(/:(.*?);/)[1];
+  const bytes = atob(parts[1]);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+function updateButtonState() {
+  const regImg = document.getElementById('register-preview');
+  const regBtn = document.getElementById('register-btn');
+  regBtn.disabled = !regImg.src || regImg.style.display === 'none';
+
+  const verImg = document.getElementById('verify-preview');
+  const verBtn = document.getElementById('verify-btn');
+  verBtn.disabled = !verImg.src || verImg.style.display === 'none';
+}
+
+// ===== Camera =====
+async function openCamera(context) {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+    state[context].stream = stream;
+    const video = document.getElementById(context + '-camera');
+    video.srcObject = stream;
+    video.style.display = 'block';
+    document.getElementById(context + '-camera-controls').style.display = 'flex';
+  } catch (err) {
+    alert('Camera access denied: ' + err.message);
+  }
+}
+
+function captureCamera(context) {
+  const video = document.getElementById(context + '-camera');
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+  const blob = dataURLToBlob(dataUrl);
+  const file = new File([blob], 'capture.jpg', { type: 'image/jpeg' });
+  const dataTransfer = new DataTransfer();
+  dataTransfer.items.add(file);
+  document.getElementById(context + '-file').files = dataTransfer.files;
+
+  const img = document.getElementById(context + '-preview');
+  img.src = dataUrl;
+  img.style.display = 'block';
+  const zone = document.getElementById(context + '-zone');
+  zone.classList.add('has-image');
+  zone.querySelector('.placeholder-icon').style.display = 'none';
+  zone.querySelector('.placeholder-text').style.display = 'none';
+
+  stopCamera(context);
+  updateButtonState();
+}
+
+function stopCamera(context) {
+  if (state[context].stream) {
+    state[context].stream.getTracks().forEach(t => t.stop());
+    state[context].stream = null;
+  }
+  document.getElementById(context + '-camera').style.display = 'none';
+  document.getElementById(context + '-camera-controls').style.display = 'none';
+}
+
+// ===== Register =====
+async function registerFace() {
+  const fileInput = document.getElementById('register-file');
+  const userId = document.getElementById('register-user-id').value.trim();
+
+  if (!fileInput.files[0]) return;
+  if (!userId) { alert('Enter a User ID'); return; }
+
+  const formData = new FormData();
+  formData.append('user_id', userId);
+  formData.append('image', fileInput.files[0]);
+
+  const btn = document.getElementById('register-btn');
+  const loading = document.getElementById('register-loading');
+  const result = document.getElementById('register-result');
+  btn.disabled = true;
+  loading.classList.add('show');
+  result.classList.remove('show');
+
+  try {
+    const { ok, status, data } = await apiPost('/auth/register', formData);
+    loading.classList.remove('show');
+    btn.disabled = false;
+    result.classList.add('show');
+
+    if (ok) {
+      result.className = 'result-card show success';
+      document.getElementById('register-badge').className = 'result-badge success';
+      document.getElementById('register-badge').textContent = '✅ Enrolled';
+      document.getElementById('register-result-body').innerHTML = `
+        <div class="result-grid">
+          <div class="result-item"><div class="label">User ID</div><div class="value">${data.user_id}</div></div>
+          <div class="result-item"><div class="label">Status</div><div class="value authenticated yes">${data.success ? 'Success' : 'Failed'}</div></div>
+          <div class="result-item" style="grid-column: span 2;">
+            <div class="label">Message</div><div class="value" style="font-weight:400;font-size:13px;">${data.message}</div>
+          </div>
+        </div>`;
+    } else {
+      result.className = 'result-card show fail';
+      document.getElementById('register-badge').className = 'result-badge fail';
+      document.getElementById('register-badge').textContent = '❌ Error ' + status;
+      document.getElementById('register-result-body').innerHTML = `<pre style="font-size:12px;color:var(--danger);overflow-x:auto;">${JSON.stringify(data, null, 2)}</pre>`;
+    }
+  } catch (err) {
+    loading.classList.remove('show');
+    btn.disabled = false;
+    result.className = 'result-card show fail';
+    document.getElementById('register-badge').className = 'result-badge fail';
+    document.getElementById('register-badge').textContent = '❌ Network Error';
+    document.getElementById('register-result-body').innerHTML = `<pre style="font-size:12px;color:var(--danger);">${err.message}</pre>`;
+  }
+}
+
+// ===== Verify =====
+async function verifyFace() {
+  const fileInput = document.getElementById('verify-file');
+  if (!fileInput.files[0]) return;
+
+  const formData = new FormData();
+  formData.append('image', fileInput.files[0]);
+
+  const btn = document.getElementById('verify-btn');
+  const loading = document.getElementById('verify-loading');
+  const result = document.getElementById('verify-result');
+  btn.disabled = true;
+  loading.classList.add('show');
+  result.classList.remove('show');
+
+  try {
+    const { ok, status, data } = await apiPost('/auth/verify', formData);
+    loading.classList.remove('show');
+    btn.disabled = false;
+    result.classList.add('show');
+
+    const auth = data.authenticated;
+    const df = data.deepfake_detected;
+
+    if (status === 403 || df) {
+      result.className = 'result-card show warning';
+      document.getElementById('verify-badge').className = 'result-badge warning';
+      document.getElementById('verify-badge').textContent = '⚠️ Deepfake Detected';
+    } else if (auth) {
+      result.className = 'result-card show success';
+      document.getElementById('verify-badge').className = 'result-badge success';
+      document.getElementById('verify-badge').textContent = '✅ Authenticated';
+    } else {
+      result.className = 'result-card show fail';
+      document.getElementById('verify-badge').className = 'result-badge fail';
+      document.getElementById('verify-badge').textContent = '❌ Not Recognized';
+    }
+
+    document.getElementById('verify-result-body').innerHTML = `
+      <div class="result-grid">
+        <div class="result-item">
+          <div class="label">Authenticated</div>
+          <div class="value authenticated ${auth ? 'yes' : 'no'}">${auth ? '✅ Yes' : '❌ No'}</div>
+        </div>
+        <div class="result-item">
+          <div class="label">User ID</div>
+          <div class="value">${data.user_id || '—'}</div>
+        </div>
+        <div class="result-item">
+          <div class="label">Confidence</div>
+          <div class="value confidence">${data.confidence != null ? (data.confidence * 100).toFixed(1) + '%' : '—'}</div>
+        </div>
+        <div class="result-item">
+          <div class="label">Deepfake</div>
+          <div class="value deepfake ${df ? 'yes' : 'no'}">${df ? '⚠️ Detected' : '✅ Clean'}</div>
+        </div>
+        <div class="result-item">
+          <div class="label">Latency</div>
+          <div class="value">${data.latency_ms || '—'} ms</div>
+        </div>
+        <div class="result-item">
+          <div class="label">Status</div>
+          <div class="value">HTTP ${status}</div>
+        </div>
+      </div>`;
+  } catch (err) {
+    loading.classList.remove('show');
+    btn.disabled = false;
+    result.className = 'result-card show fail';
+    document.getElementById('verify-badge').className = 'result-badge fail';
+    document.getElementById('verify-badge').textContent = '❌ Network Error';
+    document.getElementById('verify-result-body').innerHTML = `<pre style="font-size:12px;color:var(--danger);">${err.message}</pre>`;
+  }
+}
+
+// ===== Logs =====
+async function fetchLogs() {
+  const key = document.getElementById('admin-key').value || 'change-me';
+  const container = document.getElementById('logs-container');
+  container.innerHTML = '<div class="loading show"><div class="spinner"></div><span>Fetching logs...</span></div>';
+
+  try {
+    const res = await fetch(apiBase() + '/admin/logs', {
+      headers: { 'X-API-Key': key },
+    });
+    if (!res.ok) {
+      container.innerHTML = `<div class="result-card show fail" style="margin:0;">
+        <div style="color:var(--danger);font-weight:600;">HTTP ${res.status}: ${res.statusText}</div>
+        <div style="font-size:13px;margin-top:8px;">Check your Admin API Key.</div>
+      </div>`;
+      return;
+    }
+    const data = await res.json();
+    const logs = data.logs || [];
+
+    if (logs.length === 0) {
+      container.innerHTML = '<div class="log-empty">No audit logs yet. Try a Register or Verify action first.</div>';
+      return;
+    }
+
+    let html = `<table class="log-table">
+      <thead><tr>
+        <th>#</th><th>Timestamp</th><th>User ID</th><th>Auth</th><th>Deepfake</th><th>Confidence</th><th>Latency</th>
+      </tr></thead><tbody>`;
+    logs.forEach(log => {
+      const ts = new Date(log.timestamp).toLocaleTimeString();
+      html += `<tr>
+        <td style="color:var(--text-dim);">${log.id}</td>
+        <td style="font-size:12px;">${ts}</td>
+        <td>${log.user_id || '—'}</td>
+        <td><span class="log-badge ${log.authenticated ? 'yes-auth' : 'no-auth'}">${log.authenticated ? '✅' : '❌'}</span></td>
+        <td><span class="log-badge ${log.deepfake_detected ? 'yes-df' : 'no-df'}">${log.deepfake_detected ? '⚠️' : '✅'}</span></td>
+        <td>${log.confidence != null ? (log.confidence * 100).toFixed(1) + '%' : '—'}</td>
+        <td>${log.latency_ms}ms</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = `<div class="result-card show fail" style="margin:0;">
+      <div style="color:var(--danger);font-weight:600;">Network Error</div>
+      <div style="font-size:13px;margin-top:8px;">${err.message}</div>
+    </div>`;
+  }
+}
+
+// ===== Init =====
+checkHealth();
+setInterval(checkHealth, 15000);
+</script>
+</body>
+</html>

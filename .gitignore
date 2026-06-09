@@ -1,0 +1,21 @@
+# Rust
+lynxauth-core/target/
+Cargo.lock
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+
+# Env / local
+.env
+.env.local
+*.log
+
+# Models / runtime data
+inference-worker/models/*.onnx
+inference-worker/models/*.pth
+inference-worker/models/*.bin
+postgres-data/

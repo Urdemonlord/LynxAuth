@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: lynxauth-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lynxauth}
+      POSTGRES_USER: ${POSTGRES_USER:-lynxauth}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lynxauth}
+    ports:
+      - "55432:5432"
+    volumes:
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lynxauth} -d ${POSTGRES_DB:-lynxauth}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  inference-worker:
+    build:
+      context: ./inference-worker
+    container_name: lynxauth-worker
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://lynxauth:lynxauth@postgres:5432/lynxauth}
+      WORKER_PORT: ${WORKER_PORT:-8000}
+      FACE_MATCH_THRESHOLD: ${FACE_MATCH_THRESHOLD:-0.6}
+      DEEPFAKE_THRESHOLD: ${DEEPFAKE_THRESHOLD:-0.5}
+      DEEPFAKE_MODEL_PATH: ${DEEPFAKE_MODEL_PATH:-/app/models/deepfake_vit_int8.onnx}
+      INFERENCE_PROVIDERS: ${INFERENCE_PROVIDERS:-CPUExecutionProvider}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  lynxauth-core:
+    build:
+      context: ./lynxauth-core
+    container_name: lynxauth-core
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://lynxauth:lynxauth@postgres:5432/lynxauth}
+      APP_PORT: ${APP_PORT:-8080}
+      INFERENCE_WORKER_URL: ${INFERENCE_WORKER_URL:-http://inference-worker:8000}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-change-me}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-10}
+      FACE_MATCH_THRESHOLD: ${FACE_MATCH_THRESHOLD:-0.6}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      inference-worker:
+        condition: service_started

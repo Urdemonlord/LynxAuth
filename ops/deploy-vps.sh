@@ -6,9 +6,43 @@ COMPOSE_FILE="${APP_DIR}/docker-compose.yml"
 
 echo "[deploy] Starting LynxAuth deploy..."
 
+wait_container_running() {
+  local name="$1"
+  local tries="${2:-20}"
+  for i in $(seq 1 "$tries"); do
+    local status
+    status=$(docker inspect --format '{{.State.Status}}' "$name" 2>/dev/null || echo "missing")
+    if [ "$status" = "running" ]; then
+      echo "[deploy] $name running"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "[deploy] $name failed to reach running state"
+  docker ps -a --filter "name=$name" --format 'table {{.Names}}\t{{.Status}}' || true
+  docker logs "$name" --tail 80 2>/dev/null || true
+  return 1
+}
+
+wait_http_200() {
+  local url="$1"
+  local tries="${2:-12}"
+  for i in $(seq 1 "$tries"); do
+    local code
+    code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "$url" 2>/dev/null || echo "000")
+    if [ "$code" = "200" ]; then
+      echo "[deploy] HTTP 200 from $url"
+      return 0
+    fi
+    sleep 5
+  done
+  echo "[deploy] HTTP check failed for $url"
+  return 1
+}
+
 # --- Backup current images for rollback ---
 echo "[deploy] Tagging current images for rollback..."
-for img in lynxauth-core lynxauth-worker; do
+for img in lynxauth-core lynxauth-inference-worker; do
   if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${img}:latest$"; then
     docker tag "${img}:latest" "${img}:prev" 2>/dev/null || true
     echo "[deploy] Tagged ${img}:latest → ${img}:prev"
@@ -40,7 +74,9 @@ done
 
 # --- Rollout inference-worker ---
 echo "[deploy] Rolling out inference-worker..."
+docker rm -f lynxauth-worker 2>/dev/null || true
 docker-compose -f "$COMPOSE_FILE" up -d --force-recreate --no-deps --no-build inference-worker 2>&1
+wait_container_running lynxauth-worker 20
 
 # Wait for worker health (using Python instead of curl, since slim image lacks curl)
 sleep 5
@@ -61,15 +97,16 @@ done
 
 # --- Rollout lynxauth-core ---
 echo "[deploy] Rolling out lynxauth-core..."
+docker rm -f lynxauth-core 2>/dev/null || true
 docker-compose -f "$COMPOSE_FILE" up -d --force-recreate --no-deps --no-build lynxauth-core 2>&1
+wait_container_running lynxauth-core 20
 
 # --- Healthcheck (via exposed port) ---
 echo "[deploy] Healthcheck..."
 sleep 5
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 http://127.0.0.1:8082/healthz 2>/dev/null || echo "000")
 
-if [ "$HTTP_CODE" = "200" ]; then
-  echo "[deploy] ✅ Healthcheck passed (HTTP $HTTP_CODE)"
+if wait_http_200 "http://127.0.0.1:8082/healthz" 12; then
+  echo "[deploy] ✅ Healthcheck passed"
 
   # --- Start demo-ui ---
   echo "[deploy] Starting demo-ui..."
@@ -84,17 +121,22 @@ else
 
   # --- Rollback ---
   echo "[deploy] Rolling back to previous images..."
-  for img in lynxauth-core lynxauth-worker; do
+  for img in lynxauth-core lynxauth-inference-worker; do
     if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${img}:prev$"; then
       docker tag "${img}:prev" "${img}:latest"
       echo "[deploy] Rolled back ${img} to previous version"
     fi
   done
 
+  docker rm -f lynxauth-core 2>/dev/null || true
   docker-compose -f "$COMPOSE_FILE" up -d --force-recreate --no-deps --no-build lynxauth-core 2>&1
+  wait_container_running lynxauth-core 20
   sleep 5
-  ROLLBACK_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 http://127.0.0.1:8082/healthz 2>/dev/null || echo "000")
-  echo "[deploy] Rollback health: HTTP $ROLLBACK_CODE"
+  if wait_http_200 "http://127.0.0.1:8082/healthz" 12; then
+    echo "[deploy] Rollback health: HTTP 200"
+  else
+    echo "[deploy] Rollback healthcheck still failing"
+  fi
 
   exit 1
 fi

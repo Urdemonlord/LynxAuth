@@ -2,6 +2,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: lynxauth-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-lynxauth}
       POSTGRES_USER: ${POSTGRES_USER:-lynxauth}
@@ -21,6 +22,7 @@ services:
       context: ./inference-worker
     image: lynxauth-inference-worker:latest
     container_name: lynxauth-worker
+    restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://lynxauth:lynxauth@postgres:5432/lynxauth}
       WORKER_PORT: ${WORKER_PORT:-8000}
@@ -37,6 +39,7 @@ services:
       context: ./lynxauth-core
     image: lynxauth-core:latest
     container_name: lynxauth-core
+    restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://lynxauth:lynxauth@postgres:5432/lynxauth}
       APP_PORT: ${APP_PORT:-8080}
@@ -55,6 +58,7 @@ services:
   demo-ui:
     image: nginx:alpine
     container_name: lynxauth-demo
+    restart: unless-stopped
     ports:
       - "127.0.0.1:3001:80"
     volumes:

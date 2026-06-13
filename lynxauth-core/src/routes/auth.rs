@@ -25,6 +25,14 @@ pub struct VerifyResponse {
     pub user_id: Option<String>,
     pub confidence: Option<f32>,
     pub deepfake_detected: bool,
+    #[serde(default)]
+    pub synthetic_detected: bool,
+    #[serde(default)]
+    pub vit_prob: f64,
+    #[serde(default)]
+    pub synth_prob: f64,
+    #[serde(default)]
+    pub det_score: f64,
     pub latency_ms: u128,
 }
 

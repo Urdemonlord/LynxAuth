@@ -25,3 +25,7 @@ target/
 # OS
 .DS_Store
 Thumbs.db
+inference-worker/models/*.onnx
+inference-worker/models/preprocessor_config_synth.json
+inference-worker/scripts/
+inference-worker/services/synthetic_face_detector.py

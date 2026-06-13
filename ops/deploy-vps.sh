@@ -26,7 +26,7 @@ done
 
 # --- Ensure postgres is running ---
 echo "[deploy] Ensuring postgres is healthy..."
-docker-compose -f "$COMPOSE_FILE" up -d postgres 2>&1
+docker-compose -f "$COMPOSE_FILE" up -d --no-build postgres 2>&1
 
 # Wait for postgres health via docker healthcheck
 for i in $(seq 1 30); do
@@ -40,7 +40,7 @@ done
 
 # --- Rollout inference-worker ---
 echo "[deploy] Rolling out inference-worker..."
-docker-compose -f "$COMPOSE_FILE" up -d --force-recreate --no-deps inference-worker 2>&1
+docker-compose -f "$COMPOSE_FILE" up -d --force-recreate --no-deps --no-build inference-worker 2>&1
 
 # Wait for worker health (using Python instead of curl, since slim image lacks curl)
 sleep 5
@@ -61,7 +61,7 @@ done
 
 # --- Rollout lynxauth-core ---
 echo "[deploy] Rolling out lynxauth-core..."
-docker-compose -f "$COMPOSE_FILE" up -d --force-recreate --no-deps lynxauth-core 2>&1
+docker-compose -f "$COMPOSE_FILE" up -d --force-recreate --no-deps --no-build lynxauth-core 2>&1
 
 # --- Healthcheck (via exposed port) ---
 echo "[deploy] Healthcheck..."
@@ -73,7 +73,7 @@ if [ "$HTTP_CODE" = "200" ]; then
 
   # --- Start demo-ui ---
   echo "[deploy] Starting demo-ui..."
-  docker-compose -f "$COMPOSE_FILE" up -d --no-deps demo-ui 2>&1
+  docker-compose -f "$COMPOSE_FILE" up -d --no-deps --no-build demo-ui 2>&1
 
   # Cleanup old tagged images (remove prev tag, keep latest)
   docker rmi lynxauth-core:prev lynxauth-worker:prev 2>/dev/null || true
@@ -91,7 +91,7 @@ else
     fi
   done
 
-  docker-compose -f "$COMPOSE_FILE" up -d --force-recreate --no-deps lynxauth-core 2>&1
+  docker-compose -f "$COMPOSE_FILE" up -d --force-recreate --no-deps --no-build lynxauth-core 2>&1
   sleep 5
   ROLLBACK_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 http://127.0.0.1:8082/healthz 2>/dev/null || echo "000")
   echo "[deploy] Rollback health: HTTP $ROLLBACK_CODE"

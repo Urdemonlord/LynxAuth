@@ -18,13 +18,12 @@ class BackendInfo:
 
 
 class FaceRecognizer:
-    """Real face recognizer with InsightFace primary backend and deterministic fallback.
+    """Face recognizer using InsightFace/ArcFace with detection confidence.
 
-    Phase 2 behavior:
-    - decodes image bytes into RGB ndarray
-    - prefers InsightFace FaceAnalysis when dependency/model are available
-    - falls back to deterministic 512-dim embedding when InsightFace is unavailable
-    - can be configured to fail on invalid image bytes for stricter API behavior
+    Behavior:
+    - Uses InsightFace FaceAnalysis (ArcFace-based) when available
+    - Extracts 512-dim embedding + face detection score
+    - Falls back to deterministic embedding when InsightFace unavailable
     """
 
     def __init__(
@@ -62,6 +61,30 @@ class FaceRecognizer:
             return embedding.astype(float).tolist()
 
         return self._fallback_embedding(image)
+
+    def detect_face_quality(self, image_bytes: bytes) -> dict[str, float] | None:
+        """Extract ArcFace detection confidence & quality.
+
+        Returns:
+            dict with 'det_score', 'bbox_area', 'landmark_confidence' or None if InsightFace unavailable
+        """
+        if self._backend.mode != "insightface":
+            return None
+
+        try:
+            image = self._decode_image(image_bytes)
+            faces = self._analysis_app.get(image)
+            if not faces:
+                return {"det_score": 0.0, "bbox_area": 0.0, "face_count": 0}
+
+            best_face = max(faces, key=lambda face: self._face_area(face.bbox))
+            return {
+                "det_score": float(best_face.det_score),
+                "bbox_area": float(self._face_area(best_face.bbox)),
+                "face_count": len(faces),
+            }
+        except Exception:
+            return None
 
     def _build_backend(self) -> BackendInfo:
         if self._force_fallback:

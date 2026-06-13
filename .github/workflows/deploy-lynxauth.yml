@@ -20,13 +20,13 @@ jobs:
 
       - name: Build inference-worker image
         run: |
-          docker build -t lynxauth-worker:latest \
+          docker build -t lynxauth-inference-worker:latest \
             -f inference-worker/Dockerfile \
             inference-worker/
 
       - name: Save inference-worker image
         run: |
-          docker save lynxauth-worker:latest | gzip > /tmp/lynxauth-worker.tar.gz
+          docker save lynxauth-inference-worker:latest | gzip > /tmp/lynxauth-worker.tar.gz
 
       - name: Build lynxauth-core image
         run: |

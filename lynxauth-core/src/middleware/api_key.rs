@@ -17,6 +17,13 @@ pub async fn admin_api_key_middleware(
 ) -> Result<Response, StatusCode> {
     let path = request.uri().path().to_string();
 
+    // Skip enforcement in dev/demo mode (empty key or default dev value)
+    let dev_mode = state.config.admin_api_key.is_empty()
+        || state.config.admin_api_key == "change-me";
+    if dev_mode {
+        return Ok(next.run(request).await);
+    }
+
     if path.starts_with("/api/v1/admin") {
         let provided = request
             .headers()

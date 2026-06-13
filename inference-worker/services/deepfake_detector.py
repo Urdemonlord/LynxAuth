@@ -19,149 +19,211 @@ class BackendInfo:
     model_path: str | None = None
 
 
-@dataclass
-class PreprocessConfig:
-    width: int = 224
-    height: int = 224
-    mean: tuple[float, float, float] = (0.485, 0.456, 0.406)
-    std: tuple[float, float, float] = (0.229, 0.224, 0.225)
-    rescale_factor: float = 1.0 / 255.0
-
-
 class DeepfakeDetector:
-    """Real deepfake detector loader with ONNX primary backend and safe fallback.
+    """Dual-model deepfake detector.
 
-    Expected real-model path:
-    - `DEEPFAKE_MODEL_PATH`
-    - defaults to `inference-worker/models/efficientnet_b0_ffpp.onnx`
+    Primary: ViT (dima806/deepfake_vs_real_image_detection) — pretrained ONNX.
+        Best at faceswap artifacts (FaceForensics++ training).
+    Secondary: EfficientNet-B0 ONNX — for general deepfake detection.
+        WARNING: must be fine-tuned. An untrained export gives ~0.5 random output.
+        When efficientnet output is reliably trained, it's weighted 0.4 in ensemble.
+        Otherwise falls back to ViT-only scoring.
 
-    If the ONNX model is unavailable, detector falls back to a strict heuristic so
-    the rest of the pipeline stays testable while clearly exposing fallback mode.
+    ArcFace detection confidence (from FaceRecognizer) adds synthetic/AI face detection
+    as a separate signal outside this class.
     """
 
     def __init__(
         self,
         *,
-        model_path: str | None = None,
+        vit_model_path: str | None = None,
+        enet_model_path: str | None = None,
         threshold: float | None = None,
         force_fallback: bool = False,
-        fail_on_invalid_image: bool = False,
     ) -> None:
-        self._model_path = model_path or os.environ.get(
+        self._vit_path = vit_model_path or os.environ.get(
             "DEEPFAKE_MODEL_PATH",
             str(Path(__file__).resolve().parents[1] / "models" / "deepfake_vit_int8.onnx"),
         )
+        self._enet_path = enet_model_path or os.environ.get(
+            "EFFICIENTNET_MODEL_PATH",
+            str(Path(__file__).resolve().parents[1] / "models" / "efficientnet_b0_fp32.onnx"),
+        )
         self._threshold = threshold if threshold is not None else float(os.environ.get("DEEPFAKE_THRESHOLD", "0.5"))
         self._force_fallback = force_fallback
-        self._fail_on_invalid_image = fail_on_invalid_image
-        self._session: Any | None = None
-        self._input_name: str | None = None
-        self._preprocess = self._load_preprocess_config(Path(self._model_path))
-        self._backend = self._build_backend()
 
-    def backend_info(self) -> dict[str, str | None]:
+        self._vit_session: Any | None = None
+        self._vit_input_name: str | None = None
+        self._vit_backend = self._build_model("vit", self._vit_path)
+
+        self._enet_session: Any | None = None
+        self._enet_input_name: str | None = None
+        self._enet_backend = self._build_model("enet", self._enet_path)
+
+    def vit_backend_info(self) -> dict[str, str | None]:
         return {
-            "mode": self._backend.mode,
-            "provider": self._backend.provider,
-            "reason": self._backend.reason,
-            "model_path": self._backend.model_path,
+            "mode": self._vit_backend.mode,
+            "provider": self._vit_backend.provider,
+            "reason": self._vit_backend.reason,
+            "model_path": self._vit_backend.model_path,
+        }
+
+    def enet_backend_info(self) -> dict[str, str | None]:
+        return {
+            "mode": self._enet_backend.mode,
+            "provider": self._enet_backend.provider,
+            "reason": self._enet_backend.reason,
+            "model_path": self._enet_backend.model_path,
         }
 
     def is_fake(self, image_bytes: bytes) -> bool:
+        """Combined detection — returns True if image is likely fake."""
+        scores = self.get_scores(image_bytes)
+        combined = scores["combined"]
+
+        if combined >= self._threshold:
+            return True
+        if scores["vit_prob"] >= 0.7:
+            return True
+        if scores["enet_prob"] >= 0.7:
+            return True
+
+        # Pure fallback when no models available
+        if self._vit_backend.mode == "fallback" and self._enet_backend.mode == "fallback":
+            return self._fallback_detect(image_bytes)
+
+        return False
+
+    def get_scores(self, image_bytes: bytes) -> dict[str, float]:
+        """Return per-model probabilities for diagnostics."""
         image = self._decode_image(image_bytes)
 
-        if self._backend.mode == "onnx":
-            tensor = self._preprocess_for_model(image)
-            output = self._session.run(None, {self._input_name: tensor})[0]
-            fake_probability = self._extract_fake_probability(output)
-            return fake_probability >= self._threshold
+        vit_prob = self._model_score(image, "vit")
+        enet_prob = self._model_score(image, "enet")
 
-        payload = image_bytes.lower()
-        grayscale = image.mean(axis=2)
-        low_variance = float(np.std(grayscale)) < 2.0
-        tiny_image = image.shape[0] < 64 or image.shape[1] < 64
-        if not payload:
-            return True
-        return low_variance or tiny_image or b"deepfake" in payload
+        # EfficientNet untrained check: if it always outputs ~0.5, ignore it
+        # A properly trained model will show meaningful variation
+        if abs(enet_prob - 0.5) < 0.05:
+            enet_prob = 0.0  # untrained — don't use
 
-    def _build_backend(self) -> BackendInfo:
+        vit_weight = 0.6
+        enet_weight = 0.4
+        if enet_prob == 0.0:
+            combined = vit_prob  # ViT-only
+        else:
+            combined = vit_prob * vit_weight + enet_prob * enet_weight
+
+        return {"vit_prob": vit_prob, "enet_prob": enet_prob, "combined": combined}
+
+    def _model_score(self, image: np.ndarray, model_type: str) -> float:
+        if model_type == "vit" and self._vit_backend.mode == "onnx":
+            tensor = self._preprocess_vit(image)
+            out = self._vit_session.run(None, {self._vit_input_name: tensor})[0]
+            return self._extract_probability(out)
+
+        if model_type == "enet" and self._enet_backend.mode == "onnx":
+            tensor = self._preprocess_enet(image)
+            out = self._enet_session.run(None, {self._enet_input_name: tensor})[0]
+            return self._extract_probability(out)
+
+        return 0.0
+
+    def _build_model(self, name: str, path: str) -> BackendInfo:
         if self._force_fallback:
-            return BackendInfo(mode="fallback", provider="heuristic", reason="force_fallback enabled", model_path=self._model_path)
+            return BackendInfo(mode="fallback", provider="heuristic", reason=f"{name}: forced", model_path=path)
 
-        model_file = Path(self._model_path)
-        if not model_file.exists():
-            return BackendInfo(mode="fallback", provider="heuristic", reason="model file not found", model_path=self._model_path)
+        f = Path(path)
+        if not f.exists():
+            return BackendInfo(mode="fallback", provider="heuristic", reason=f"{name}: file not found", model_path=path)
 
         try:
             import onnxruntime as ort
+            providers = [p.strip() for p in os.environ.get("INFERENCE_PROVIDERS", "CPUExecutionProvider").split(",") if p.strip()]
+            session = ort.InferenceSession(str(f), providers=providers)
+            input_name = session.get_inputs()[0].name
 
-            providers = [provider.strip() for provider in os.environ.get("INFERENCE_PROVIDERS", "CPUExecutionProvider").split(",") if provider.strip()]
-            self._session = ort.InferenceSession(str(model_file), providers=providers)
-            self._input_name = self._session.get_inputs()[0].name
-            return BackendInfo(mode="onnx", provider=providers[0], reason=None, model_path=self._model_path)
+            if name == "vit":
+                self._vit_session = session
+                self._vit_input_name = input_name
+            else:
+                self._enet_session = session
+                self._enet_input_name = input_name
+
+            return BackendInfo(mode="onnx", provider=providers[0], reason=None, model_path=path)
         except Exception as err:
-            self._session = None
-            self._input_name = None
-            return BackendInfo(mode="fallback", provider="heuristic", reason=str(err), model_path=self._model_path)
+            return BackendInfo(mode="fallback", provider="heuristic", reason=f"{name}: {err}", model_path=path)
 
-    def _decode_image(self, image_bytes: bytes) -> np.ndarray:
+    @staticmethod
+    def _decode_image(image_bytes: bytes) -> np.ndarray:
         if not image_bytes:
             raise ValueError("empty image payload")
         try:
-            with Image.open(io.BytesIO(image_bytes)) as image:
-                rgb = image.convert("RGB")
-                return np.array(rgb)
+            with Image.open(io.BytesIO(image_bytes)) as img:
+                return np.array(img.convert("RGB"))
         except Exception as err:
-            if self._fail_on_invalid_image:
-                raise ValueError("invalid image bytes") from err
             raise ValueError("invalid image bytes") from err
 
-    def _preprocess_for_model(self, image: np.ndarray) -> np.ndarray:
-        resized = Image.fromarray(image).resize((self._preprocess.width, self._preprocess.height))
-        array = np.asarray(resized, dtype=np.float32) * self._preprocess.rescale_factor
-        normalized = (array - np.array(self._preprocess.mean, dtype=np.float32)) / np.array(self._preprocess.std, dtype=np.float32)
-        chw = np.transpose(normalized, (2, 0, 1))
-        return np.expand_dims(chw, axis=0).astype(np.float32)
-
-    @staticmethod
-    def _extract_fake_probability(output: Any) -> float:
-        array = np.asarray(output, dtype=np.float32).squeeze()
-        if array.ndim == 0:
-            return float(array)
-        if array.shape[0] == 1:
-            return float(array[0])
-        logits = np.exp(array - np.max(array))
-        probabilities = logits / logits.sum()
-        return float(probabilities[-1])
-
-    @staticmethod
-    def _load_preprocess_config(model_path: Path) -> PreprocessConfig:
-        config_path = model_path.with_name("preprocessor_config.json")
-        if not config_path.exists():
-            return PreprocessConfig()
-
-        try:
-            data = json.loads(config_path.read_text())
-        except Exception:
-            return PreprocessConfig()
-
-        size = data.get("size") or {}
-        if isinstance(size, int):
-            width = height = int(size)
+    def _preprocess_vit(self, image: np.ndarray) -> np.ndarray:
+        # ViT model uses its own preprocessor_config.json
+        from pathlib import Path as P
+        cfg = P(self._vit_path).with_name("preprocessor_config.json")
+        if cfg.exists():
+            data = json.loads(cfg.read_text())
+            sz = data.get("size") or {}
+            w = int(sz.get("width", sz.get("shortest_edge", 224))) if not isinstance(sz, int) else int(sz)
+            h = int(sz.get("height", sz.get("shortest_edge", 224))) if not isinstance(sz, int) else int(sz)
+            mean = self._triple(data.get("image_mean"), (0.485, 0.456, 0.406))
+            std = self._triple(data.get("image_std"), (0.229, 0.224, 0.225))
+            scale = float(data.get("rescale_factor", 1.0 / 255.0))
         else:
-            width = int(size.get("width", size.get("shortest_edge", 224)))
-            height = int(size.get("height", size.get("shortest_edge", 224)))
+            w = h = 224
+            mean = (0.485, 0.456, 0.406)
+            std = (0.229, 0.224, 0.225)
+            scale = 1.0 / 255.0
 
-        mean = DeepfakeDetector._triple(data.get("image_mean"), (0.485, 0.456, 0.406))
-        std = DeepfakeDetector._triple(data.get("image_std"), (0.229, 0.224, 0.225))
-        rescale_factor = float(data.get("rescale_factor", 1.0 / 255.0))
-        return PreprocessConfig(width=width, height=height, mean=mean, std=std, rescale_factor=rescale_factor)
+        resized = Image.fromarray(image).resize((w, h))
+        arr = np.asarray(resized, dtype=np.float32) * scale
+        norm = (arr - np.array(mean, dtype=np.float32)) / np.array(std, dtype=np.float32)
+        return np.expand_dims(np.transpose(norm, (2, 0, 1)), 0).astype(np.float32)
 
     @staticmethod
-    def _triple(value: Any, default: tuple[float, float, float]) -> tuple[float, float, float]:
-        if isinstance(value, (list, tuple)) and len(value) == 3:
-            return (float(value[0]), float(value[1]), float(value[2]))
-        if isinstance(value, (int, float)):
-            scalar = float(value)
-            return (scalar, scalar, scalar)
-        return default
+    def _preprocess_enet(image: np.ndarray) -> np.ndarray:
+        # EfficientNet: 224x224, ImageNet normalize (mean, std)
+        resized = Image.fromarray(image).resize((224, 224))
+        arr = np.asarray(resized, dtype=np.float32) / 255.0
+        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+        std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+        norm = (arr - mean) / std
+        return np.expand_dims(np.transpose(norm, (2, 0, 1)), 0).astype(np.float32)
+
+    @staticmethod
+    def _extract_probability(output: Any) -> float:
+        arr = np.asarray(output, dtype=np.float32).squeeze()
+        if arr.ndim == 0:
+            return float(arr)
+        if arr.shape[0] == 1:
+            return float(arr[0])
+        # Multi-class: softmax + take last class
+        logits = arr - np.max(arr)
+        probs = np.exp(logits) / np.sum(np.exp(logits))
+        return float(probs[-1])
+
+    def _fallback_detect(self, image_bytes: bytes) -> bool:
+        image = self._decode_image(image_bytes)
+        gray = image.mean(axis=2)
+        if float(np.std(gray)) < 2.0:
+            return True
+        if image.shape[0] < 64 or image.shape[1] < 64:
+            return True
+        payload = image_bytes.lower()
+        if not payload:
+            return True
+        return b"deepfake" in payload
+
+    @staticmethod
+    def _triple(v: Any, d: tuple[float, float, float]) -> tuple[float, float, float]:
+        if isinstance(v, (list, tuple)) and len(v) == 3:
+            return (float(v[0]), float(v[1]), float(v[2]))
+        if isinstance(v, (int, float)):
+            return (float(v),) * 3
+        return d

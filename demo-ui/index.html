@@ -30,33 +30,79 @@
     align-items: center;
   }
 
-  /* Header */
+  /* Header / Navbar */
   header {
     width: 100%;
-    padding: 20px 24px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    padding: 16px 32px;
+    background: rgba(17, 24, 39, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(42, 52, 86, 0.5);
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 12px;
+    justify-content: space-between;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  header .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
   }
   header .logo {
-    width: 36px; height: 36px;
+    width: 38px; height: 38px;
     background: linear-gradient(135deg, var(--accent), #8b5cf6);
-    border-radius: 10px;
+    border-radius: 12px;
     display: flex; align-items: center; justify-content: center;
-    font-weight: 800; font-size: 18px; color: white;
+    font-weight: 800; font-size: 20px; color: white;
+    box-shadow: 0 0 20px rgba(59,130,246,0.3);
+    flex-shrink: 0;
   }
-  header h1 {
-    font-size: 22px; font-weight: 700;
-    background: linear-gradient(135deg, var(--text), var(--accent));
+  header .brand-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+  }
+  header .brand-text h1 {
+    font-size: 20px; font-weight: 800;
+    background: linear-gradient(135deg, #e2e8f0, var(--accent));
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    letter-spacing: -0.3px;
   }
-  header .tagline {
-    font-size: 12px; color: var(--text-dim);
-    margin-left: 8px; -webkit-text-fill-color: var(--text-dim);
+  header .brand-text .tagline {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 500;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    -webkit-text-fill-color: var(--text-dim);
+    margin-top: 1px;
   }
+  header .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header .status-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-dim);
+    padding: 6px 12px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 20px;
+    border: 1px solid var(--border);
+  }
+  header .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  header .status-dot.online { background: var(--success); box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+  header .status-dot.offline { background: var(--danger); }
 
   /* Main */
   main {
@@ -289,8 +335,19 @@
 <body>
 
 <header>
-  <div class="logo">L</div>
-  <h1>LynxAuth <span class="tagline">Sharp Identity. Real Face.</span></h1>
+  <div class="brand">
+    <div class="logo">L</div>
+    <div class="brand-text">
+      <h1>LynxAuth</h1>
+      <span class="tagline">Sharp Identity. Real Face.</span>
+    </div>
+  </div>
+  <div class="nav-right">
+    <div class="status-badge">
+      <span class="status-dot offline" id="header-status-dot"></span>
+      <span id="header-status-text">checking...</span>
+    </div>
+  </div>
 </header>
 
 <main>
@@ -432,18 +489,26 @@ function apiBase() {
 async function checkHealth() {
   const dot = document.querySelector('#api-status .status-dot');
   const text = document.getElementById('status-text');
+  const hDot = document.getElementById('header-status-dot');
+  const hText = document.getElementById('header-status-text');
   dot.className = 'status-dot offline';
+  hDot.className = 'status-dot offline';
   text.textContent = 'checking...';
+  hText.textContent = 'checking...';
   try {
     const res = await fetch(apiBase() + '/../healthz');
     if (res.ok) {
       dot.className = 'status-dot online';
+      hDot.className = 'status-dot online';
       text.textContent = 'online';
+      hText.textContent = 'online';
     } else {
       text.textContent = 'error ' + res.status;
+      hText.textContent = 'error';
     }
   } catch {
     text.textContent = 'offline';
+    hText.textContent = 'offline';
   }
 }
 

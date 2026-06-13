@@ -67,7 +67,7 @@ jobs:
             ops/deploy-vps.sh \
             "${SSH_USER}@${SSH_HOST}:/home/meowlabs/lynxauth/ops/deploy-vps.sh"
 
-          ssh -P "$SSH_PORT" \
+          ssh -p "$SSH_PORT" \
             -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=no \
             "${SSH_USER}@${SSH_HOST}" \

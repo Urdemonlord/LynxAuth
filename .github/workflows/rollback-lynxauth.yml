@@ -1,0 +1,74 @@
+name: Rollback LynxAuth
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Commit SHA to rollback to'
+        required: true
+
+concurrency:
+  group: deploy-lynxauth
+  cancel-in-progress: true
+
+jobs:
+  rollback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout specific commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.commit }}
+
+      - name: Build inference-worker image
+        run: |
+          docker build -t lynxauth-worker:latest \
+            -f inference-worker/Dockerfile \
+            inference-worker/
+
+      - name: Save inference-worker image
+        run: |
+          docker save lynxauth-worker:latest | gzip > /tmp/lynxauth-worker.tar.gz
+
+      - name: Build lynxauth-core image
+        run: |
+          docker build -t lynxauth-core:latest \
+            -f lynxauth-core/Dockerfile \
+            lynxauth-core/
+
+      - name: Save lynxauth-core image
+        run: |
+          docker save lynxauth-core:latest | gzip > /tmp/lynxauth-core.tar.gz
+
+      - name: Deploy rollback to VPS
+        env:
+          SSH_HOST: ${{ secrets.LYNX_VPS_HOST }}
+          SSH_USER: ${{ secrets.LYNX_VPS_USER }}
+          SSH_PORT: ${{ secrets.LYNX_VPS_PORT || '22' }}
+          SSH_KEY: ${{ secrets.LYNX_VPS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          for img in lynxauth-core.tar.gz lynxauth-worker.tar.gz; do
+            scp -P "$SSH_PORT" \
+              -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              "/tmp/$img" \
+              "${SSH_USER}@${SSH_HOST}:/tmp/$img"
+          done
+
+          scp -P "$SSH_PORT" \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            ops/deploy-vps.sh \
+            "${SSH_USER}@${SSH_HOST}:/home/meowlabs/lynxauth/ops/deploy-vps.sh"
+
+          ssh -P "$SSH_PORT" \
+            -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            "${SSH_USER}@${SSH_HOST}" \
+            "bash /home/meowlabs/lynxauth/ops/deploy-vps.sh"
